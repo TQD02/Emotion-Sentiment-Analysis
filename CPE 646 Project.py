@@ -1,29 +1,19 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# # CPE 646
-# # Final Project
-# # Name: Minh Quang Duong
-# # Email ID: mduong@stevens.edu
-# # CWID: 20030957
-# 
-
-# In[52]:
-
 
 import numpy as np
 import pandas as pd
 import json
 import tensorflow as tf
-from tensorflow import keras
-from tensorflow.keras import layers, Model
-from tensorflow.keras.preprocessing.text import Tokenizer
-from tensorflow.keras.preprocessing.sequence import pad_sequences
+
+print(f"TensorFlow version: {tf.__version__}")
+import keras
+from keras import layers, Model
+from tensorflow.keras.layers import TextVectorization  
+from keras.preprocessing.sequence import pad_sequences
 import torch
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, confusion_matrix, precision_score, recall_score
 from sklearn.metrics import accuracy_score
-from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
+from keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
 from sklearn.utils.class_weight import compute_class_weight
 from sklearn.metrics import f1_score
 from keras import regularizers
@@ -34,8 +24,6 @@ import re
 import zipfile
 import os
 
-
-# In[2]:
 
 
 #Extract and list files
@@ -48,8 +36,6 @@ for root, dirs, files_list in os.walk('extracted_files'):
     for file in files_list:
         print(os.path.join(root, file))
 
-
-# In[54]:
 
 
 #Inspect Data
@@ -98,20 +84,6 @@ for emotion_idx, emotion_name in enumerate(emotions):
     else:
         print(f"{emotion_idx:<12} {emotion_name:<20} {'MISSING':<15} {'MISSING'}")
 
-#Plot sentiment classes distribution
-class_counts = np.sum(y_train, axis=0)
-plt.figure(figsize=(8, 5))
-bars = plt.bar(sentiment_classes, class_counts, color=['green', 'red', 'orange', 'gray'])
-
-plt.title('Distribution of Training Samples per Sentiment')
-plt.xlabel('Sentiment')
-plt.ylabel('Number of Samples')
-for bar in bars:
-    yval = bar.get_height()
-    plt.text(bar.get_x() + bar.get_width()/2, yval + 20, int(yval), ha='center', va='bottom')
-
-plt.show()
-
 
 #Check for missing values
 print(f"\nMissing values in training data:\n{train_data.isnull().sum()}")
@@ -136,9 +108,6 @@ plt.savefig('emotion_distribution.png', dpi=300, bbox_inches='tight')
 plt.show()
 
 
-# In[53]:
-
-
 #Data cleaning
 def clean_text(text):
     if pd.isna(text):
@@ -153,27 +122,28 @@ train_data['cleaned_text'] = train_data['Text'].apply(clean_text)
 test_data['cleaned_text'] = test_data['Text'].apply(clean_text)
 
 
-# In[11]:
-
-
 #Tokenization
 MAX_WORDS = 10000
 MAX_LEN = 100
 EMBEDDING_DIM = 128
 
-print("\nTokenizing text...")
-tokenizer = Tokenizer(num_words=MAX_WORDS, oov_token='<OOV>')
-tokenizer.fit_on_texts(train_data['cleaned_text'])
-#Convert texts to sequences
-X_train_seq = tokenizer.texts_to_sequences(train_data['cleaned_text'])
-X_test_seq = tokenizer.texts_to_sequences(test_data['cleaned_text'])
+vectorizer = TextVectorization(
+    max_tokens=MAX_WORDS,
+    output_mode='int',
+    output_sequence_length=MAX_LEN,
+    standardize=None  # We already cleaned the text
+)
 
+# Adapt the vectorizer to the training data
+vectorizer.adapt(train_data['cleaned_text'].values)
 
+# Get vocabulary size
+vocab_size = len(vectorizer.get_vocabulary())
+print(f"Vocabulary size: {vocab_size}")
 #Pad sequences to same length
-X_train_pad = pad_sequences(X_train_seq, maxlen=MAX_LEN, padding='post', truncating='post')
-X_test_pad = pad_sequences(X_test_seq, maxlen=MAX_LEN, padding='post', truncating='post')
+X_train_pad = vectorizer(train_data['cleaned_text'].values).numpy()
+X_test_pad = vectorizer(test_data['cleaned_text'].values).numpy()
 
-print(f"Vocabulary size: {len(tokenizer.word_index) + 1}")
 print(f"Shape of X train: {X_train_pad.shape}")
 print(f"Shape of X test: {X_test_pad.shape}")
 
@@ -207,13 +177,22 @@ print(f"Shape of Y train: {y_train.shape}")
 print(f"Shape of Y test: {y_test.shape}")
 
 
-# In[26]:
-
 
 #Calculate Class Weights
 class_counts = np.sum(y_train, axis=0) 
 total_samples = len(y_train)
 
+plt.figure(figsize=(8, 5))
+bars = plt.bar(sentiment_classes, class_counts, color=['green', 'red', 'orange', 'gray'])
+
+plt.title('Distribution of Training Samples per Sentiment')
+plt.xlabel('Sentiment')
+plt.ylabel('Number of Samples')
+for bar in bars:
+    yval = bar.get_height()
+    plt.text(bar.get_x() + bar.get_width()/2, yval + 20, int(yval), ha='center', va='bottom')
+
+plt.show()
 print(f"Counts per class: {class_counts}")
 
 
@@ -228,9 +207,6 @@ for i in range(NUM_CLASSES):
 print("\nComputed Class Weights:")
 for i, name in enumerate(sentiment_classes):
     print(f"{name}: {class_weights[i]:.4f}")
-
-
-# In[60]:
 
 
 #Model 1: Convolutional Neural Network (CNN) for text classification
@@ -300,10 +276,6 @@ def create_bilstm_model_2(max_words=10000, max_len=100, embedding_dim=128, num_c
 
     return model
 
-
-# In[28]:
-
-
 def compile_and_train(model, X_train, y_train, X_val, y_val, num_classes=4, epochs=10, batch_size=256,class_weight=None):
     #Compile model
     model.compile(optimizer='adam', loss='binary_crossentropy', metrics= ['accuracy'])
@@ -324,9 +296,6 @@ def compile_and_train(model, X_train, y_train, X_val, y_val, num_classes=4, epoc
     return history
 
 
-# In[29]:
-
-
 #Create and train CNN model
 model_cnn = create_cnn_model(MAX_WORDS, MAX_LEN, EMBEDDING_DIM, NUM_CLASSES)
 history_cnn = compile_and_train(
@@ -339,10 +308,6 @@ history_cnn = compile_and_train(
     class_weight=class_weights
 )
 
-
-# In[34]:
-
-
 #Evaluate CNN model on test set
 y_pred_probs_cnn = model_cnn.predict(X_test_pad)
 y_pred_binary = (y_pred_probs_cnn > 0.2).astype(int)
@@ -353,9 +318,6 @@ print(f"Test Accuracy: {test_acc_cnn:.4f}")
 
 print("\nClassification Report:")
 print(classification_report(y_test, y_pred_binary, target_names=sentiment_classes, zero_division=0))
-
-
-# In[61]:
 
 
 #Create and train BiLSTM.1 model
@@ -372,9 +334,6 @@ history_bilstm_1 = compile_and_train(
 )
 
 
-# In[62]:
-
-
 #Evaluate BiLSTM.1 model on test set
 y_pred_probs_bilstm_1 = model_bilstm_1.predict(X_test_pad)
 y_pred_bilstm_1 = (y_pred_probs_bilstm_1 > 0.3).astype(int)
@@ -384,9 +343,6 @@ print(f"\nTest Loss: {test_loss_bilstm_1:.4f}")
 print(f"Test Accuracy: {test_acc_bilstm_1:4f}")
 print("\nClassification Report:")
 print(classification_report(y_test, y_pred_bilstm_1, target_names=sentiment_classes, zero_division=0))
-
-
-# In[63]:
 
 
 #Create and train BiLSTM.2 model
@@ -402,10 +358,6 @@ history_bilstm_2 = compile_and_train(
 
 )
 
-
-# In[64]:
-
-
 #Evaluate BiLSTM.2 model on test set
 y_pred_probs_bilstm_2 = model_bilstm_2.predict(X_test_pad)
 y_pred_bilstm_2 = (y_pred_probs_bilstm_2 > 0.3).astype(int)
@@ -419,7 +371,6 @@ print("\nClassification Report:")
 print(classification_report(y_test, y_pred_bilstm_2, target_names=sentiment_classes, zero_division=0))
 
 
-# In[ ]:
 
 
 
